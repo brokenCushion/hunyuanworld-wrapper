@@ -1,0 +1,15 @@
+# HunyuanWorld-1.0 stage 1 (panorama generation) Python deps.
+# Versions pinned to match Tencent's tested conda env (docker/HunyuanWorld.yaml).
+# torch/torchvision are installed separately (CUDA-matched wheels) before this.
+diffusers==0.34.0
+transformers==4.51.0
+accelerate==1.6.0
+peft==0.15.0
+safetensors==0.5.3
+huggingface-hub==0.30.2
+sentencepiece==0.2.0
+protobuf==5.29.3
+einops==0.4.1
+numpy==1.24.1
+opencv-python-headless==4.11.0.86
+py360convert==1.0.3

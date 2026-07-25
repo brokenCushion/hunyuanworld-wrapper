@@ -1,0 +1,23 @@
+services:
+  hunyuanworld-server:
+    build: .
+    image: hunyuanworld-wrapper-server:local
+    container_name: hunyuanworld-server
+    restart: unless-stopped
+    # HuggingFace token (gated FLUX.1-dev) from a local .env -- see .env.example.
+    # git-ignored and docker-ignored; never baked into the image.
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data/hf-cache:/data/hf-cache
+      - ./data/jobs:/data/jobs
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    runtime: nvidia
