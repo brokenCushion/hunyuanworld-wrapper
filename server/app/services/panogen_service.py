@@ -30,6 +30,13 @@ def run_panorama(
     """
     import torch
 
+    # Avoid PyTorch's cuDNN scaled-dot-product-attention backend, whose graph
+    # planning fails on some cuDNN builds with
+    #   "cuDNN Frontend error: No execution plans support the graph."
+    # Disabling it makes SDPA fall back to the flash / memory-efficient / math
+    # kernels, which handle FLUX's attention fine.
+    torch.backends.cuda.enable_cudnn_sdp(False)
+
     # The Demo classes live in demo_panogen.py at the repo root, and import the
     # repo's hy3dworld package -- make sure the repo root is importable.
     if str(REPO_DIR) not in sys.path:
