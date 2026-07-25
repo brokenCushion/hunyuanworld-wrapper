@@ -53,6 +53,20 @@ RUN pip install -r /app/requirements-panogen.txt \
 COPY requirements-server.txt /app/requirements-server.txt
 RUN pip install -r /app/requirements-server.txt
 
+# Stage-1 isolation: the repo's hy3dworld package __init__ files eagerly import
+# the scene-generation modules (WorldComposer, LayerDecomposition), which pull
+# in the heavy stage-2 dependency chain (Real-ESRGAN, ZIM, GroundingDINO, MoGe,
+# open3d, trimesh, ...). Replace the three package __init__ files with minimal
+# versions exposing ONLY the panorama pipelines + Perspective, so stage 1 runs
+# on the light deps alone. (Stage 2 restores the full package and adds the rest.)
+# Placed after the pip installs so those cached layers aren't invalidated.
+RUN printf 'from .pano_generator import Image2PanoramaPipelines, Text2PanoramaPipelines\n' \
+      > /app/hunyuanworld-src/hy3dworld/models/__init__.py \
+ && printf 'from .perspective_utils import Perspective\n' \
+      > /app/hunyuanworld-src/hy3dworld/utils/__init__.py \
+ && printf 'from .models import Image2PanoramaPipelines, Text2PanoramaPipelines\nfrom .utils import Perspective\n' \
+      > /app/hunyuanworld-src/hy3dworld/__init__.py
+
 ENV PYTHONPATH=/app/hunyuanworld-src:${PYTHONPATH} \
     HYWORLD_REPO_DIR=/app/hunyuanworld-src \
     HYWORLD_JOBS_DIR=/data/jobs \
