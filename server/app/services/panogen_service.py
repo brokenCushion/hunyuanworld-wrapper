@@ -22,8 +22,12 @@ def run_panorama(
 
     Wraps the repo's demo_panogen.py Demo classes (which load FLUX + the
     HunyuanWorld PanoDiT LoRA and already enable CPU offload + VAE tiling).
-    fp8 toggles the AngelSlim FP8 attention+GeMM processors; cache toggles
-    DeepCache -- both trade a little quality for VRAM/speed on a 24GB card.
+    fp8 enables the AngelSlim FP8 *GeMM* processor -- native torch fp8
+    (torch._scaled_mm, float8_e4m3fn) that halves the linear layers (most of
+    FLUX) so the transformer fits 24GB, with no extra dependencies. The fp8
+    *attention* processor is intentionally left off: it needs the separate
+    `sageattention` library and is only a minor optimization on top. cache
+    toggles DeepCache -- trades a little quality for speed.
 
     Loads the model fresh and releases GPU memory before returning so the next
     queued job starts clean (single GPU).
@@ -47,12 +51,14 @@ def run_panorama(
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # The Demo classes only read fp8_attention / fp8_gemm / cache off args.
-    args = SimpleNamespace(fp8_attention=fp8, fp8_gemm=fp8, cache=cache)
+    # fp8_attention stays off (needs the sageattention lib); fp8_gemm is native
+    # torch fp8 and gives the VRAM benefit on its own.
+    args = SimpleNamespace(fp8_attention=False, fp8_gemm=fp8, cache=cache)
 
     demo = None
     try:
         ctx.set_stage("loading_model", progress=5)
-        ctx.log(f"Loading HunyuanWorld PanoDiT ({mode}, fp8={fp8}, cache={cache})")
+        ctx.log(f"Loading HunyuanWorld PanoDiT ({mode}, fp8_gemm={fp8}, cache={cache})")
         if mode == "i2s":
             if not image_path:
                 raise ValueError("image-to-panorama job is missing its input image")
