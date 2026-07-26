@@ -103,7 +103,8 @@ RUN grep -rl "torchvision.transforms.functional_tensor" /usr/local/lib/python3.1
 # transformers import (GroundingDINO). 0.30.2 matches Tencent's tested env and
 # works for every consumer here (transformers, diffusers, moge). Late pin so the
 # expensive earlier layers (pytorch3d compile, ZIM) stay cached.
-RUN pip install "huggingface-hub==0.30.2"
+# easydict: an undeclared runtime dep of ZIM (its setup.py doesn't list it).
+RUN pip install "huggingface-hub==0.30.2" easydict==1.9
 
 # Sanity check: the full hy3dworld package (panorama + scene-gen) imports with
 # all deps present. This catches a missing scene-gen dependency at BUILD time
