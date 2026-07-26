@@ -91,6 +91,13 @@ RUN git clone https://github.com/naver-ai/ZIM.git /app/hunyuanworld-src/ZIM \
 COPY requirements-server.txt /app/requirements-server.txt
 RUN pip install -r /app/requirements-server.txt
 
+# basicsr (pulled in by gfpgan, overriding basicsr-fixed) imports
+# torchvision.transforms.functional_tensor, removed in torchvision 0.17+.
+# Rewrite that import to the current location in every installed file that uses
+# it (basicsr, facexlib, ...). Late step so the pytorch3d compile stays cached.
+RUN grep -rl "torchvision.transforms.functional_tensor" /usr/local/lib/python3.10/dist-packages/ \
+    | xargs -r sed -i 's/torchvision\.transforms\.functional_tensor/torchvision.transforms.functional/g'
+
 # Pin huggingface-hub back to the version transformers 4.51.0 needs (>=0.30,<1.0).
 # The --ignore-installed scenegen install pulled hub 1.24.0, which breaks the
 # transformers import (GroundingDINO). 0.30.2 matches Tencent's tested env and
