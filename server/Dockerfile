@@ -91,6 +91,13 @@ RUN git clone https://github.com/naver-ai/ZIM.git /app/hunyuanworld-src/ZIM \
 COPY requirements-server.txt /app/requirements-server.txt
 RUN pip install -r /app/requirements-server.txt
 
+# Pin huggingface-hub back to the version transformers 4.51.0 needs (>=0.30,<1.0).
+# The --ignore-installed scenegen install pulled hub 1.24.0, which breaks the
+# transformers import (GroundingDINO). 0.30.2 matches Tencent's tested env and
+# works for every consumer here (transformers, diffusers, moge). Late pin so the
+# expensive earlier layers (pytorch3d compile, ZIM) stay cached.
+RUN pip install "huggingface-hub==0.30.2"
+
 # Sanity check: the full hy3dworld package (panorama + scene-gen) imports with
 # all deps present. This catches a missing scene-gen dependency at BUILD time
 # rather than at first generation.
