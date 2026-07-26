@@ -1,19 +1,17 @@
-# HunyuanWorld-1.0 self-contained backend -- STAGE 1 (panorama generation).
+# HunyuanWorld-1.0 self-contained backend -- STAGES 1 + 2.
 #
-# Wraps text/image -> 360 panorama (FLUX + HunyuanWorld PanoDiT LoRA) behind an
-# HTTP API, self-contained in Docker so install/uninstall never touches the
-# host OS. Stage 2 (panorama -> layered 3D meshes: ZIM, GroundingDINO,
-# Real-ESRGAN) is added in a later revision of this file.
+# Stage 1: text/image -> 360 panorama (FLUX + HunyuanWorld PanoDiT LoRA).
+# Stage 2: panorama -> semantically layered 3D meshes (ZIM segmentation +
+#          GroundingDINO + FLUX.1-Fill inpainting + MoGe depth + pytorch3d).
 #
-# Requires a HuggingFace token at RUNTIME (not build time) for the gated
-# FLUX.1-dev download -- passed via docker-compose env_file (.env), never baked
-# into the image. Weights land in the /data/hf-cache bind mount.
+# Requires a HuggingFace token at RUNTIME for TWO gated models: FLUX.1-dev
+# (panorama) and FLUX.1-Fill-dev (inpainting). Passed via docker-compose
+# env_file (.env); weights land in the /data/hf-cache bind mount.
 #
 # CUDA 12.4 / Python 3.10 / torch 2.5.0 -- matching Tencent's tested env.
-# NOTE: stage 1 needs NO from-source CUDA builds (no flash-attn/pytorch3d) --
-# those are stage-2 deps -- so this image builds cleanly and quickly.
+# The `devel` base provides nvcc for the one from-source CUDA build (pytorch3d).
 
-FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
+FROM nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
@@ -24,7 +22,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && add-apt-repository -y ppa:deadsnakes/ppa \
     && apt-get update && apt-get install -y --no-install-recommends \
         python3.10 python3.10-venv python3.10-dev \
-        git curl ffmpeg libgl1 libglib2.0-0 \
+        git curl wget ffmpeg libgl1 libglib2.0-0 \
+        build-essential cmake ninja-build \
     && rm -rf /var/lib/apt/lists/*
 
 RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python3.10 \
@@ -32,12 +31,17 @@ RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python3.10 \
     && ln -sf /usr/local/bin/pip /usr/local/bin/pip3
 
 # Lock torch to the CUDA-12.4-matched build across every pip install, so a
-# transitive dep can never swap in a differently-compiled torch (the class of
-# failure that plagued the HY-World 2.0 build).
+# transitive dep can never swap in a differently-compiled torch.
 RUN mkdir -p /etc/pip \
     && printf 'torch==2.5.0\ntorchvision==0.20.0\n' > /etc/pip/constraints.txt
 ENV PIP_CONSTRAINT=/etc/pip/constraints.txt \
     PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cu124
+
+# RTX 4090 (Ada = sm_89) for the pytorch3d from-source build. docker build sees
+# no GPU, so the arch must be pinned or torch's autodetect crashes on an empty
+# arch list. FORCE_CUDA builds the CUDA extension even without a visible device.
+ENV TORCH_CUDA_ARCH_LIST="8.9+PTX" \
+    FORCE_CUDA=1
 
 WORKDIR /app
 
@@ -46,26 +50,47 @@ RUN git clone https://github.com/Tencent-Hunyuan/HunyuanWorld-1.0.git /app/hunyu
 RUN pip install torch==2.5.0 torchvision==0.20.0 --index-url https://download.pytorch.org/whl/cu124 \
     && python -c "import torch; print('=== TORCH', torch.__version__, 'CUDA', torch.version.cuda, '===')"
 
+# Stage 1 (panorama) deps.
 COPY requirements-panogen.txt /app/requirements-panogen.txt
-RUN pip install -r /app/requirements-panogen.txt \
-    && python -c "import torch; print('=== TORCH', torch.__version__, 'CUDA', torch.version.cuda, '===')"
+RUN pip install -r /app/requirements-panogen.txt
+
+# Stage 2 (scene generation) deps.
+COPY requirements-scenegen.txt /app/requirements-scenegen.txt
+RUN pip install -r /app/requirements-scenegen.txt
+
+# Real-ESRGAN super-resolution. realesrgan's PyPI deps pull plain `basicsr`,
+# which imports torchvision.transforms.functional_tensor (removed in tv 0.20);
+# install basicsr-fixed first, then realesrgan --no-deps so it uses the fix.
+RUN pip install basicsr-fixed facexlib==0.3.0 gfpgan==1.3.8 \
+    && pip install --no-deps realesrgan==0.3.0
+
+# MoGe panorama depth (+ utils3d it depends on).
+RUN pip install utils3d "moge @ git+https://github.com/microsoft/MoGe.git"
+
+# pytorch3d -- the only from-source CUDA build. --no-build-isolation so it
+# compiles against the torch installed above rather than fetching its own.
+RUN pip install --no-build-isolation "git+https://github.com/facebookresearch/pytorch3d.git" \
+    && python -c "import pytorch3d; print('=== pytorch3d', pytorch3d.__version__, '===')"
+
+# ZIM segmentation: cloned INTO the repo dir because layer_decomposer.py hard-codes
+# the checkpoint path as "./ZIM/zim_vit_l_2092" relative to the repo root (which
+# is the CWD the scene service runs in). Download the vit-l onnx checkpoints there.
+RUN git clone https://github.com/naver-ai/ZIM.git /app/hunyuanworld-src/ZIM \
+    && cd /app/hunyuanworld-src/ZIM && pip install -e . \
+    && mkdir -p zim_vit_l_2092 \
+    && curl -L -o zim_vit_l_2092/encoder.onnx \
+        https://huggingface.co/naver-iv/zim-anything-vitl/resolve/main/zim_vit_l_2092/encoder.onnx \
+    && curl -L -o zim_vit_l_2092/decoder.onnx \
+        https://huggingface.co/naver-iv/zim-anything-vitl/resolve/main/zim_vit_l_2092/decoder.onnx
 
 COPY requirements-server.txt /app/requirements-server.txt
 RUN pip install -r /app/requirements-server.txt
 
-# Stage-1 isolation: the repo's hy3dworld package __init__ files eagerly import
-# the scene-generation modules (WorldComposer, LayerDecomposition), which pull
-# in the heavy stage-2 dependency chain (Real-ESRGAN, ZIM, GroundingDINO, MoGe,
-# open3d, trimesh, ...). Replace the three package __init__ files with minimal
-# versions exposing ONLY the panorama pipelines + Perspective, so stage 1 runs
-# on the light deps alone. (Stage 2 restores the full package and adds the rest.)
-# Placed after the pip installs so those cached layers aren't invalidated.
-RUN printf 'from .pano_generator import Image2PanoramaPipelines, Text2PanoramaPipelines\n' \
-      > /app/hunyuanworld-src/hy3dworld/models/__init__.py \
- && printf 'from .perspective_utils import Perspective\n' \
-      > /app/hunyuanworld-src/hy3dworld/utils/__init__.py \
- && printf 'from .models import Image2PanoramaPipelines, Text2PanoramaPipelines\nfrom .utils import Perspective\n' \
-      > /app/hunyuanworld-src/hy3dworld/__init__.py
+# Sanity check: the full hy3dworld package (panorama + scene-gen) imports with
+# all deps present. This catches a missing scene-gen dependency at BUILD time
+# rather than at first generation.
+RUN cd /app/hunyuanworld-src \
+    && python -c "import hy3dworld; from hy3dworld import Text2PanoramaPipelines, LayerDecomposition, WorldComposer; print('=== hy3dworld OK ===')"
 
 ENV PYTHONPATH=/app/hunyuanworld-src:${PYTHONPATH} \
     HYWORLD_REPO_DIR=/app/hunyuanworld-src \

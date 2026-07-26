@@ -7,9 +7,14 @@ from fastapi.responses import FileResponse
 
 from .config import JOBS_DIR
 from .job_manager import job_manager
-from .services.panogen_service import run_panorama
+from .services.pipeline import run_full
 
-app = FastAPI(title="HunyuanWorld-1.0 wrapper", version="0.1.0")
+app = FastAPI(title="HunyuanWorld-1.0 wrapper", version="0.2.0")
+
+
+def _labels(raw: str) -> list[str]:
+    """Space/comma-separated foreground object labels -> list."""
+    return [t for t in raw.replace(",", " ").split() if t]
 
 
 def _hf_token_present() -> bool:
@@ -70,6 +75,10 @@ def get_artifact(job_id: str, name: str):
 def generate_text(
     prompt: str = Form(...),
     negative_prompt: str = Form(""),
+    scene: bool = Form(True),
+    labels_fg1: str = Form(""),
+    labels_fg2: str = Form(""),
+    classes: str = Form("outdoor"),
     fp8: bool = Form(True),
     cache: bool = Form(True),
     seed: int = Form(42),
@@ -78,7 +87,8 @@ def generate_text(
         raise HTTPException(400, "prompt is empty")
     job_id = job_manager.new_job_id()
     job_manager.submit(
-        "t2s", run_panorama, job_id, "t2s", prompt, negative_prompt, None, fp8, cache, seed,
+        "t2s", run_full, job_id, "t2s", prompt, negative_prompt, None,
+        _labels(labels_fg1), _labels(labels_fg2), classes, scene, fp8, cache, seed,
         job_id=job_id,
     )
     return {"job_id": job_id}
@@ -89,6 +99,10 @@ async def generate_image(
     file: UploadFile = File(...),
     prompt: str = Form(""),
     negative_prompt: str = Form(""),
+    scene: bool = Form(True),
+    labels_fg1: str = Form(""),
+    labels_fg2: str = Form(""),
+    classes: str = Form("outdoor"),
     fp8: bool = Form(True),
     cache: bool = Form(True),
     seed: int = Form(42),
@@ -101,7 +115,8 @@ async def generate_image(
         shutil.copyfileobj(file.file, f)
 
     job_manager.submit(
-        "i2s", run_panorama, job_id, "i2s", prompt, negative_prompt, str(dest), fp8, cache, seed,
+        "i2s", run_full, job_id, "i2s", prompt, negative_prompt, str(dest),
+        _labels(labels_fg1), _labels(labels_fg2), classes, scene, fp8, cache, seed,
         job_id=job_id,
     )
     return {"job_id": job_id}
