@@ -64,29 +64,31 @@ def health(server_url):
     return _request(f"{server_url.rstrip('/')}/health", timeout=5.0)
 
 
-def submit_text(server_url, prompt, negative_prompt, fp8, cache, seed):
+def _scene_fields(opts: dict) -> dict:
+    return {
+        "negative_prompt": opts.get("negative_prompt") or "",
+        "scene": str(bool(opts.get("scene", True))).lower(),
+        "labels_fg1": opts.get("labels_fg1") or "",
+        "labels_fg2": opts.get("labels_fg2") or "",
+        "classes": opts.get("classes") or "outdoor",
+        "fp8": str(bool(opts.get("fp8", True))).lower(),
+        "cache": str(bool(opts.get("cache", True))).lower(),
+        "seed": str(int(opts.get("seed", 42))),
+    }
+
+
+def submit_text(server_url, prompt, opts):
     if not prompt.strip():
         raise ServerError("Prompt is empty")
-    body = urllib.parse.urlencode({
-        "prompt": prompt,
-        "negative_prompt": negative_prompt or "",
-        "fp8": str(bool(fp8)).lower(),
-        "cache": str(bool(cache)).lower(),
-        "seed": str(int(seed)),
-    }).encode("utf-8")
+    fields = {"prompt": prompt, **_scene_fields(opts)}
+    body = urllib.parse.urlencode(fields).encode("utf-8")
     return _post_job(server_url, "/generate/text", body, "application/x-www-form-urlencoded", timeout=30.0)
 
 
-def submit_image(server_url, image_path, prompt, negative_prompt, fp8, cache, seed):
+def submit_image(server_url, image_path, prompt, opts):
     if not image_path or not os.path.isfile(image_path):
         raise ServerError(f"Image not found: {image_path}")
-    fields = {
-        "prompt": prompt or "",
-        "negative_prompt": negative_prompt or "",
-        "fp8": str(bool(fp8)).lower(),
-        "cache": str(bool(cache)).lower(),
-        "seed": str(int(seed)),
-    }
+    fields = {"prompt": prompt or "", **_scene_fields(opts)}
     body, ctype = _encode_multipart(fields, file_field="file", filepath=image_path)
     return _post_job(server_url, "/generate/image", body, ctype, timeout=120.0)
 

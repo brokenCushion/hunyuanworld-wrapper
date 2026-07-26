@@ -1,3 +1,4 @@
+import math
 import os
 
 import bpy
@@ -6,6 +7,19 @@ from . import background, http_client
 from .preferences import get_server_url
 
 PANO_ARTIFACT = "panorama.png"
+
+
+def _job_opts(job) -> dict:
+    return {
+        "negative_prompt": job.negative_prompt,
+        "scene": job.scene,
+        "labels_fg1": job.labels_fg1,
+        "labels_fg2": job.labels_fg2,
+        "classes": job.classes_type,
+        "fp8": job.fp8,
+        "cache": job.cache,
+        "seed": job.seed,
+    }
 
 
 def _start_job(context, kind, submit_fn):
@@ -23,6 +37,7 @@ def _start_job(context, kind, submit_fn):
     job.stage = "submitting"
     job.progress = 0.0
     job.error = ""
+    job.mesh_layers = ""
     job.is_busy = True
     background.ensure_timer_running()
     background.submit_and_poll(get_server_url(context), submit_fn)
@@ -41,13 +56,13 @@ class HYWORLD_OT_generate_text(bpy.types.Operator):
         if job.is_busy:
             self.report({"WARNING"}, "A job is already running")
             return {"CANCELLED"}
-        p, n, fp8, cache, seed = job.prompt, job.negative_prompt, job.fp8, job.cache, job.seed
+        prompt, opts = job.prompt, _job_opts(job)
 
         def submit(url):
-            return http_client.submit_text(url, p, n, fp8, cache, seed)
+            return http_client.submit_text(url, prompt, opts)
 
         _start_job(context, "t2s", submit)
-        self.report({"INFO"}, "Text-to-panorama submitted")
+        self.report({"INFO"}, "Text-to-scene submitted")
         return {"FINISHED"}
 
 
@@ -65,13 +80,13 @@ class HYWORLD_OT_generate_image(bpy.types.Operator):
         if job.is_busy:
             self.report({"WARNING"}, "A job is already running")
             return {"CANCELLED"}
-        p, n, fp8, cache, seed = job.prompt, job.negative_prompt, job.fp8, job.cache, job.seed
+        prompt, opts = job.prompt, _job_opts(job)
 
         def submit(url):
-            return http_client.submit_image(url, image_path, p, n, fp8, cache, seed)
+            return http_client.submit_image(url, image_path, prompt, opts)
 
         _start_job(context, "i2s", submit)
-        self.report({"INFO"}, "Image-to-panorama submitted")
+        self.report({"INFO"}, "Image-to-scene submitted")
         return {"FINISHED"}
 
 
@@ -147,6 +162,90 @@ def _apply_world_environment(context, image_path):
     nt.links.new(bg.outputs["Background"], out.inputs["Surface"])
 
 
+def _orient_and_color(objs):
+    """WorldGen-style: rotate -90deg X (Y-up -> Z-up), bake it, and add a
+    material that displays the mesh's vertex colors."""
+    meshes = [o for o in objs if o.type == "MESH"]
+    for obj in meshes:
+        obj.rotation_euler[0] += math.radians(-90)
+    if meshes:
+        bpy.ops.object.select_all(action="DESELECT")
+        for obj in meshes:
+            obj.select_set(True)
+        bpy.context.view_layer.objects.active = meshes[0]
+        bpy.ops.object.transform_apply(location=False, rotation=True, scale=False)
+    for obj in meshes:
+        me = obj.data
+        if not me.color_attributes:
+            continue
+        col = me.color_attributes.active_color or me.color_attributes[0]
+        mat = bpy.data.materials.new(name="HYWorld_VertexColor")
+        mat.use_nodes = True
+        nt = mat.node_tree
+        bsdf = nt.nodes.get("Principled BSDF")
+        vc = nt.nodes.new("ShaderNodeVertexColor")
+        vc.layer_name = col.name
+        if bsdf is not None:
+            nt.links.new(vc.outputs["Color"], bsdf.inputs["Base Color"])
+        me.materials.clear()
+        me.materials.append(mat)
+
+
+def _import_ply(filepath):
+    before = set(bpy.data.objects)
+    if hasattr(bpy.ops.wm, "ply_import"):
+        bpy.ops.wm.ply_import(filepath=filepath)
+    else:
+        bpy.ops.import_mesh.ply(filepath=filepath)
+    return [o for o in bpy.data.objects if o not in before]
+
+
+class HYWORLD_OT_import_meshes(bpy.types.Operator):
+    bl_idname = "hyworld.import_meshes"
+    bl_label = "Import 3D Scene"
+    bl_description = "Download all layer meshes and import them as separate objects (upright + colored)"
+
+    def execute(self, context):
+        job = context.scene.hyworld_job
+        layers = [n for n in job.mesh_layers.split(",") if n]
+        if job.status != "done" or not job.job_id or not layers:
+            self.report({"WARNING"}, "No completed scene with meshes to import")
+            return {"CANCELLED"}
+        if job.importing:
+            self.report({"WARNING"}, "Already importing")
+            return {"CANCELLED"}
+
+        server_url = get_server_url(context)
+        dest_dir = os.path.join(bpy.app.tempdir, "hyworld_downloads", job.job_id)
+        os.makedirs(dest_dir, exist_ok=True)
+
+        # Download layers sequentially; import each as it lands. A shared counter
+        # clears the busy flag once the last one is done.
+        remaining = {"n": len(layers)}
+        job.importing = True
+
+        def _make_cb(name):
+            def _cb(path, error):
+                if error:
+                    self.report({"ERROR"}, f"{name}: {error}")
+                else:
+                    try:
+                        _orient_and_color(_import_ply(path))
+                    except Exception as exc:  # noqa: BLE001
+                        job.error = f"Import of {name} failed: {exc!r}"
+                remaining["n"] -= 1
+                if remaining["n"] <= 0:
+                    job.importing = False
+            return _cb
+
+        for name in layers:
+            dest = os.path.join(dest_dir, name)
+            background.download_artifact_async(server_url, job.job_id, name, dest,
+                                               _make_cb(name), fatal_on_error=False)
+        self.report({"INFO"}, f"Downloading {len(layers)} layer mesh(es)...")
+        return {"FINISHED"}
+
+
 class HYWORLD_OT_check_health(bpy.types.Operator):
     bl_idname = "hyworld.check_health"
     bl_label = "Check Server"
@@ -171,6 +270,7 @@ class HYWORLD_OT_check_health(bpy.types.Operator):
 classes = (
     HYWORLD_OT_generate_text,
     HYWORLD_OT_generate_image,
+    HYWORLD_OT_import_meshes,
     HYWORLD_OT_download_pano,
     HYWORLD_OT_set_environment,
     HYWORLD_OT_check_health,

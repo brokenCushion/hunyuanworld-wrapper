@@ -48,6 +48,8 @@ def _drain_queue():
             job.stage = msg.get("stage", job.stage)
             job.progress = msg.get("progress", job.progress)
             job.error = msg.get("error") or ""
+            if msg.get("mesh_layers"):
+                job.mesh_layers = ",".join(msg["mesh_layers"])
             if msg.get("status") in ("done", "failed"):
                 job.is_busy = False
         elif kind == "fatal_error":
@@ -110,10 +112,12 @@ def _poll_until_terminal(server_url, job_id):
             continue
 
         artifacts = info.get("artifacts") or {}
+        mesh_layers = sorted(k for k in artifacts if k.startswith("mesh_layer") and k.endswith(".ply"))
         _post({
             "type": "status", "job_id": job_id,
             "status": info.get("status", "running"), "stage": info.get("stage", ""),
             "progress": info.get("progress", 0.0), "error": info.get("error"),
+            "mesh_layers": mesh_layers,
         })
         if not pano_fetched and "panorama.png" in artifacts:
             pano_fetched = True

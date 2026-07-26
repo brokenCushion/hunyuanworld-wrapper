@@ -45,6 +45,29 @@ class HYWORLD_JobState(bpy.types.PropertyGroup):
     )
     seed: bpy.props.IntProperty(name="Seed", default=42, min=0)
 
+    # Scene generation (stage 2)
+    scene: bpy.props.BoolProperty(
+        name="Build 3D scene",
+        description="Run stage 2 (panorama -> layered 3D meshes). Off = panorama only (much faster)",
+        default=True,
+    )
+    classes_type: bpy.props.EnumProperty(
+        name="Scene type",
+        description="Indoor or outdoor scene (guides layering / sky handling)",
+        items=[("outdoor", "Outdoor", ""), ("indoor", "Indoor", "")],
+        default="outdoor",
+    )
+    labels_fg1: bpy.props.StringProperty(
+        name="Foreground 1",
+        description="Object labels to peel into the first foreground layer, space/comma separated (e.g. trees, stones)",
+        default="",
+    )
+    labels_fg2: bpy.props.StringProperty(
+        name="Foreground 2",
+        description="Object labels for a second foreground layer (e.g. sculptures, flowers)",
+        default="",
+    )
+
     # Job status
     job_id: bpy.props.StringProperty(default="")
     job_kind: bpy.props.StringProperty(default="")  # t2s | i2s
@@ -55,6 +78,7 @@ class HYWORLD_JobState(bpy.types.PropertyGroup):
     is_busy: bpy.props.BoolProperty(default=False)
     importing: bpy.props.BoolProperty(default=False)
     pano_image_name: bpy.props.StringProperty(default="")
+    mesh_layers: bpy.props.StringProperty(default="")  # comma-separated mesh_layer*.ply artifact names
 
 
 classes = (HYWORLD_JobState,)

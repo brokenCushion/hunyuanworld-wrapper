@@ -36,7 +36,16 @@ class HYWORLD_PT_main_panel(bpy.types.Panel):
         box.prop(job, "seed")
 
         box = layout.box()
-        box.label(text="Text to Panorama", icon="OUTLINER_OB_FONT")
+        box.label(text="3D Scene", icon="SCENE_DATA")
+        box.prop(job, "scene", toggle=True)
+        sub = box.column()
+        sub.enabled = job.scene
+        sub.prop(job, "classes_type", text="")
+        sub.prop(job, "labels_fg1")
+        sub.prop(job, "labels_fg2")
+
+        box = layout.box()
+        box.label(text="Text to Scene", icon="OUTLINER_OB_FONT")
         box.prop(job, "prompt", text="")
         box.prop(job, "negative_prompt", text="Neg")
         row = box.row()
@@ -44,7 +53,7 @@ class HYWORLD_PT_main_panel(bpy.types.Panel):
         row.operator("hyworld.generate_text", icon="PLAY")
 
         box = layout.box()
-        box.label(text="Image to Panorama", icon="IMAGE_DATA")
+        box.label(text="Image to Scene", icon="IMAGE_DATA")
         box.prop(job, "image_path", text="")
         if job.input_image_name:
             _draw_image_preview(box, context, job.input_image_name, max_scale=14.0)
@@ -71,9 +80,13 @@ class HYWORLD_PT_main_panel(bpy.types.Panel):
 
         if job.status == "done":
             if job.importing:
-                box.label(text="Downloading...", icon="SORTTIME")
+                box.label(text="Downloading & importing...", icon="SORTTIME")
             col = box.column(align=True)
             col.enabled = not job.importing
+            if job.mesh_layers:
+                n = len([x for x in job.mesh_layers.split(",") if x])
+                col.operator("hyworld.import_meshes", icon="IMPORT",
+                             text=f"Import 3D Scene ({n} layer{'s' if n != 1 else ''})")
             col.operator("hyworld.set_environment", icon="WORLD")
             col.operator("hyworld.download_pano", icon="EXPORT")
 
