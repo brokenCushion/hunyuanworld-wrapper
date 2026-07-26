@@ -103,6 +103,13 @@ RUN grep -rl "torchvision.transforms.functional_tensor" /usr/local/lib/python3.1
 # transformers import (GroundingDINO). 0.30.2 matches Tencent's tested env and
 # works for every consumer here (transformers, diffusers, moge). Late pin so the
 # expensive earlier layers (pytorch3d compile, ZIM) stay cached.
+# utils3d: MoGe calls utils3d.numpy.image_uv, which only exists in the exact
+# git commit MoGe pins (the PyPI `utils3d` is a different, renamed API and
+# fails at runtime with "module 'utils3d.numpy' has no attribute 'image_uv'").
+# Force MoGe's pinned commit. Late step so the pytorch3d compile stays cached.
+RUN pip install --force-reinstall --no-deps \
+    "utils3d @ git+https://github.com/EasternJournalist/utils3d.git@3fab839f0be9931dac7c8488eb0e1600c236e183"
+
 # easydict: an undeclared runtime dep of ZIM (its setup.py doesn't list it).
 RUN pip install "huggingface-hub==0.30.2" easydict==1.9
 
@@ -110,7 +117,8 @@ RUN pip install "huggingface-hub==0.30.2" easydict==1.9
 # all deps present. This catches a missing scene-gen dependency at BUILD time
 # rather than at first generation.
 RUN cd /app/hunyuanworld-src \
-    && python -c "import hy3dworld; from hy3dworld import Text2PanoramaPipelines, LayerDecomposition, WorldComposer; print('=== hy3dworld OK ===')"
+    && python -c "import hy3dworld; from hy3dworld import Text2PanoramaPipelines, LayerDecomposition, WorldComposer; print('=== hy3dworld OK ===')" \
+    && python -c "import utils3d; assert hasattr(utils3d.numpy, 'image_uv'), 'utils3d is the wrong build: MoGe needs utils3d.numpy.image_uv'; print('=== utils3d API OK ===')"
 
 ENV PYTHONPATH=/app/hunyuanworld-src:${PYTHONPATH} \
     HYWORLD_REPO_DIR=/app/hunyuanworld-src \
