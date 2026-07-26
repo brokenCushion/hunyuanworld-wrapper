@@ -40,6 +40,7 @@ class HYWORLD_PT_main_panel(bpy.types.Panel):
         box.prop(job, "scene", toggle=True)
         sub = box.column()
         sub.enabled = job.scene
+        sub.prop(job, "mesh_quality", text="Quality")
         sub.prop(job, "classes_type", text="")
         sub.prop(job, "labels_fg1")
         sub.prop(job, "labels_fg2")
@@ -91,7 +92,30 @@ class HYWORLD_PT_main_panel(bpy.types.Panel):
             col.operator("hyworld.download_pano", icon="EXPORT")
 
 
-classes = (HYWORLD_PT_main_panel,)
+class HYWORLD_PT_advanced_panel(bpy.types.Panel):
+    """Collapsed-by-default sub-panel for the generation tuning knobs."""
+    bl_label = "Advanced"
+    bl_idname = "HYWORLD_PT_advanced_panel"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "HunyuanWorld"
+    bl_parent_id = "HYWORLD_PT_main_panel"
+    bl_options = {"DEFAULT_CLOSED"}
+
+    def draw(self, context):
+        layout = self.layout
+        job = context.scene.hyworld_job
+        col = layout.column(align=True)
+        col.prop(job, "steps")
+        col.prop(job, "guidance_scale")
+        col.prop(job, "pano_width")
+        col.separator()
+        row = col.row()
+        row.enabled = bool(job.image_path)
+        row.prop(job, "fov")
+
+
+classes = (HYWORLD_PT_main_panel, HYWORLD_PT_advanced_panel)
 
 
 def register():

@@ -82,6 +82,12 @@ def generate_text(
     fp8: bool = Form(True),
     cache: bool = Form(True),
     seed: int = Form(42),
+    steps: int = Form(50),
+    guidance_scale: float = Form(30.0),
+    true_cfg_scale: float = Form(-1.0),
+    pano_width: int = Form(1920),
+    fov: float = Form(80.0),
+    mesh_quality: str = Form("high"),
 ):
     if not prompt.strip():
         raise HTTPException(400, "prompt is empty")
@@ -89,6 +95,7 @@ def generate_text(
     job_manager.submit(
         "t2s", run_full, job_id, "t2s", prompt, negative_prompt, None,
         _labels(labels_fg1), _labels(labels_fg2), classes, scene, fp8, cache, seed,
+        steps, guidance_scale, true_cfg_scale, pano_width, fov, mesh_quality,
         job_id=job_id,
     )
     return {"job_id": job_id}
@@ -106,6 +113,12 @@ async def generate_image(
     fp8: bool = Form(True),
     cache: bool = Form(True),
     seed: int = Form(42),
+    steps: int = Form(50),
+    guidance_scale: float = Form(30.0),
+    true_cfg_scale: float = Form(-1.0),
+    pano_width: int = Form(1920),
+    fov: float = Form(80.0),
+    mesh_quality: str = Form("high"),
 ):
     job_id = job_manager.new_job_id()
     input_dir = JOBS_DIR / job_id / "input"
@@ -117,6 +130,7 @@ async def generate_image(
     job_manager.submit(
         "i2s", run_full, job_id, "i2s", prompt, negative_prompt, str(dest),
         _labels(labels_fg1), _labels(labels_fg2), classes, scene, fp8, cache, seed,
+        steps, guidance_scale, true_cfg_scale, pano_width, fov, mesh_quality,
         job_id=job_id,
     )
     return {"job_id": job_id}

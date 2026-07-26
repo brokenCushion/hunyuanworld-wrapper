@@ -8,6 +8,34 @@ from ..config import JOBS_DIR, REPO_DIR
 from ..job_manager import JobContext
 
 
+# Mesh quality presets -> (panorama working resolution, per-layer max mesh res).
+# "high" is Tencent's default (target_size 3840). Lower presets cut both the
+# working resolution and the mesh density, so they're faster and lighter on
+# VRAM at the cost of geometric detail.
+_MESH_QUALITY = {
+    "low":    {"target": 1920, "fg": 1920, "bg": 1920, "sky": 960},
+    "medium": {"target": 2880, "fg": 2880, "bg": 2880, "sky": 1440},
+    "high":   {"target": 3840, "fg": 3840, "bg": 3840, "sky": 1920},
+}
+
+
+def _apply_mesh_quality(ctx: JobContext, demo, quality: str) -> None:
+    """HYworldDemo hard-codes target_size=3840 when building its WorldComposer.
+    The composer reads these as instance attributes at generate time, so setting
+    them post-construction changes mesh detail without forking upstream code."""
+    preset = _MESH_QUALITY.get(quality, _MESH_QUALITY["high"])
+    wc = demo.hy3d_world
+    target = preset["target"]
+    wc.resolution = (target, target // 2)
+    wc.kernel_scale = max(1, int(target / 1920))
+    wc.max_fg_mesh_res = preset["fg"]
+    wc.max_bg_mesh_res = preset["bg"]
+    wc.max_sky_mesh_res = preset["sky"]
+    ctx.log(f"Mesh quality '{quality}': resolution={wc.resolution}, "
+            f"fg/bg/sky max res={preset['fg']}/{preset['bg']}/{preset['sky']}, "
+            f"kernel_scale={wc.kernel_scale}")
+
+
 def run_scene(
     ctx: JobContext,
     job_id: str,
@@ -18,6 +46,7 @@ def run_scene(
     fp8: bool,
     cache: bool,
     seed: int,
+    mesh_quality: str = "high",
 ) -> dict:
     """Stage 2 of HunyuanWorld-1.0: panorama -> semantically layered 3D meshes.
 
@@ -51,9 +80,10 @@ def run_scene(
     try:
         ctx.set_stage("loading_scene_models", progress=62)
         ctx.log(f"Loading scene models (fp8_gemm={fp8}, classes={classes}, "
-                f"fg1={labels_fg1}, fg2={labels_fg2})")
+                f"mesh_quality={mesh_quality}, fg1={labels_fg1}, fg2={labels_fg2})")
         os.chdir(str(REPO_DIR))  # so ./ZIM/zim_vit_l_2092 resolves
         demo = HYworldDemo(args, seed=seed)
+        _apply_mesh_quality(ctx, demo, mesh_quality)
 
         ctx.set_stage("building_layers", progress=70)
         ctx.log("Decomposing layers + reconstructing meshes")

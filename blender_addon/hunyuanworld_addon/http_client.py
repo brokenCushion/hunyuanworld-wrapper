@@ -74,6 +74,11 @@ def _scene_fields(opts: dict) -> dict:
         "fp8": str(bool(opts.get("fp8", True))).lower(),
         "cache": str(bool(opts.get("cache", True))).lower(),
         "seed": str(int(opts.get("seed", 42))),
+        "steps": str(int(opts.get("steps", 50))),
+        "guidance_scale": str(float(opts.get("guidance_scale", 30.0))),
+        "pano_width": str(int(opts.get("pano_width", 1920))),
+        "fov": str(float(opts.get("fov", 80.0))),
+        "mesh_quality": opts.get("mesh_quality") or "high",
     }
 
 

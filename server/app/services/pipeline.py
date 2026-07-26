@@ -17,6 +17,12 @@ def run_full(
     fp8: bool,
     cache: bool,
     seed: int,
+    steps: int = 50,
+    guidance_scale: float = 30.0,
+    true_cfg_scale: float = -1.0,
+    pano_width: int = 1920,
+    fov: float = 80.0,
+    mesh_quality: str = "high",
 ) -> dict:
     """Full HunyuanWorld-1.0 pipeline for one job.
 
@@ -27,6 +33,8 @@ def run_full(
     """
     pano_result = run_panorama(
         ctx, job_id, mode, prompt, negative_prompt, image_path, fp8, cache, seed,
+        steps=steps, guidance_scale=guidance_scale, true_cfg_scale=true_cfg_scale,
+        pano_width=pano_width, fov=fov,
     )
     if not scene:
         return pano_result
@@ -34,5 +42,6 @@ def run_full(
     panorama_path = pano_result["panorama.png"]
     scene_result = run_scene(
         ctx, job_id, panorama_path, labels_fg1, labels_fg2, classes, fp8, cache, seed,
+        mesh_quality=mesh_quality,
     )
     return {**pano_result, **scene_result}

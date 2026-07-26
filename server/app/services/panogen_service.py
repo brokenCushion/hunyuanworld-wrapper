@@ -17,6 +17,11 @@ def run_panorama(
     fp8: bool,
     cache: bool,
     seed: int,
+    steps: int = 50,
+    guidance_scale: float = 30.0,
+    true_cfg_scale: float = -1.0,
+    pano_width: int = 1920,
+    fov: float = 80.0,
 ) -> dict:
     """Stage 1 of HunyuanWorld-1.0: text/image -> 360 equirectangular panorama.
 
@@ -55,6 +60,24 @@ def run_panorama(
     # torch fp8 and gives the VRAM benefit on its own.
     args = SimpleNamespace(fp8_attention=False, fp8_gemm=fp8, cache=cache)
 
+    def _apply_params(d) -> None:
+        """The Demo classes hard-code their generation params as instance
+        attributes in __init__ and read them in run(), so overriding them here
+        (post-construction) tunes generation without forking upstream code.
+        Width is snapped to a multiple of 16 for the VAE; height is half (2:1
+        equirectangular)."""
+        w = max(1024, int(pano_width) // 16 * 16)
+        d.width, d.height = w, w // 2
+        d.num_inference_steps = max(1, int(steps))
+        d.guidance_scale = float(guidance_scale)
+        if true_cfg_scale >= 0:  # negative -> keep the class default
+            d.true_cfg_scale = float(true_cfg_scale)
+        if hasattr(d, "FOV"):  # image mode only
+            d.FOV = float(fov)
+        ctx.log(f"Params: {d.width}x{d.height}, steps={d.num_inference_steps}, "
+                f"guidance={d.guidance_scale}, true_cfg={d.true_cfg_scale}"
+                + (f", fov={d.FOV}" if hasattr(d, "FOV") else ""))
+
     demo = None
     try:
         ctx.set_stage("loading_model", progress=5)
@@ -63,11 +86,13 @@ def run_panorama(
             if not image_path:
                 raise ValueError("image-to-panorama job is missing its input image")
             demo = Image2PanoramaDemo(args)
+            _apply_params(demo)
             ctx.set_stage("generating_panorama", progress=30)
             ctx.log(f"Generating panorama from image {Path(image_path).name!r}")
             demo.run(prompt, negative_prompt, image_path, seed, str(out_dir))
         else:
             demo = Text2PanoramaDemo(args)
+            _apply_params(demo)
             ctx.set_stage("generating_panorama", progress=30)
             ctx.log(f"Generating panorama from prompt {prompt!r}")
             demo.run(prompt, negative_prompt, seed, str(out_dir))

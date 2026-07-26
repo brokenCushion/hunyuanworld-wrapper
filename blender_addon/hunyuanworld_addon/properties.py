@@ -45,7 +45,39 @@ class HYWORLD_JobState(bpy.types.PropertyGroup):
     )
     seed: bpy.props.IntProperty(name="Seed", default=42, min=0)
 
+    # Advanced generation params (stage 1)
+    steps: bpy.props.IntProperty(
+        name="Steps",
+        description="Diffusion steps. Fewer = faster, more = finer detail (default 50)",
+        default=50, min=10, max=100,
+    )
+    guidance_scale: bpy.props.FloatProperty(
+        name="Guidance",
+        description="How strictly the panorama follows the prompt (default 30)",
+        default=30.0, min=1.0, max=50.0,
+    )
+    pano_width: bpy.props.IntProperty(
+        name="Panorama width",
+        description="Equirectangular width in px; height is half. Higher = more detail + VRAM (default 1920)",
+        default=1920, min=1024, max=2560, step=128,
+    )
+    fov: bpy.props.FloatProperty(
+        name="Input FOV",
+        description="Image mode only: field of view your photo occupies in the 360 (default 80)",
+        default=80.0, min=30.0, max=140.0,
+    )
+
     # Scene generation (stage 2)
+    mesh_quality: bpy.props.EnumProperty(
+        name="Mesh quality",
+        description="Detail of the generated meshes. Higher = denser geometry, more VRAM and time",
+        items=[
+            ("low", "Low", "1920px working res, lighter meshes -- fastest"),
+            ("medium", "Medium", "2880px working res -- balanced"),
+            ("high", "High", "3840px working res -- Tencent's default, most detail"),
+        ],
+        default="high",
+    )
     scene: bpy.props.BoolProperty(
         name="Build 3D scene",
         description="Run stage 2 (panorama -> layered 3D meshes). Off = panorama only (much faster)",

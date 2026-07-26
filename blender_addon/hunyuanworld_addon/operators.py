@@ -19,6 +19,11 @@ def _job_opts(job) -> dict:
         "fp8": job.fp8,
         "cache": job.cache,
         "seed": job.seed,
+        "steps": job.steps,
+        "guidance_scale": job.guidance_scale,
+        "pano_width": job.pano_width,
+        "fov": job.fov,
+        "mesh_quality": job.mesh_quality,
     }
 
 
