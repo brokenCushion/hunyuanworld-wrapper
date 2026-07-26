@@ -103,12 +103,14 @@ RUN grep -rl "torchvision.transforms.functional_tensor" /usr/local/lib/python3.1
 # transformers import (GroundingDINO). 0.30.2 matches Tencent's tested env and
 # works for every consumer here (transformers, diffusers, moge). Late pin so the
 # expensive earlier layers (pytorch3d compile, ZIM) stay cached.
-# utils3d: MoGe calls utils3d.numpy.image_uv, which only exists in the exact
-# git commit MoGe pins (the PyPI `utils3d` is a different, renamed API and
-# fails at runtime with "module 'utils3d.numpy' has no attribute 'image_uv'").
-# Force MoGe's pinned commit. Late step so the pytorch3d compile stays cached.
+# utils3d: HunyuanWorld's pano_depth_utils.py calls utils3d.numpy.image_uv and
+# .intrinsics_to_fov. Upstream utils3d later renamed image_uv -> uv_map, so both
+# the PyPI build AND the newer commit MoGe pins fail at runtime with
+# "module 'utils3d.numpy' has no attribute 'image_uv'". Pin the older commit
+# that still provides both functions (the same one WorldGen pinned).
+# Late step so the pytorch3d compile stays cached.
 RUN pip install --force-reinstall --no-deps \
-    "utils3d @ git+https://github.com/EasternJournalist/utils3d.git@3fab839f0be9931dac7c8488eb0e1600c236e183"
+    "utils3d @ git+https://github.com/EasternJournalist/utils3d.git@3913c65d81e05e47b9f367250cf8c0f7462a0900"
 
 # easydict: an undeclared runtime dep of ZIM (its setup.py doesn't list it).
 RUN pip install "huggingface-hub==0.30.2" easydict==1.9
@@ -118,7 +120,7 @@ RUN pip install "huggingface-hub==0.30.2" easydict==1.9
 # rather than at first generation.
 RUN cd /app/hunyuanworld-src \
     && python -c "import hy3dworld; from hy3dworld import Text2PanoramaPipelines, LayerDecomposition, WorldComposer; print('=== hy3dworld OK ===')" \
-    && python -c "import utils3d, utils3d.numpy as u3n, inspect; print('utils3d from:', inspect.getfile(utils3d)); print('uv-ish names:', [n for n in dir(u3n) if 'uv' in n.lower()][:10]); assert hasattr(u3n, 'image_uv'), 'utils3d is the wrong build: MoGe needs utils3d.numpy.image_uv'; print('=== utils3d API OK ===')"
+    && python -c "import utils3d.numpy as u3n; missing = [f for f in ('image_uv', 'intrinsics_to_fov') if not hasattr(u3n, f)]; assert not missing, f'utils3d build lacks {missing} (HunyuanWorld pano_depth_utils needs them)'; print('=== utils3d API OK ===')"
 
 ENV PYTHONPATH=/app/hunyuanworld-src:${PYTHONPATH} \
     HYWORLD_REPO_DIR=/app/hunyuanworld-src \
