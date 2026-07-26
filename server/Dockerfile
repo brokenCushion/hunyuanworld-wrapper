@@ -118,7 +118,7 @@ RUN pip install "huggingface-hub==0.30.2" easydict==1.9
 # rather than at first generation.
 RUN cd /app/hunyuanworld-src \
     && python -c "import hy3dworld; from hy3dworld import Text2PanoramaPipelines, LayerDecomposition, WorldComposer; print('=== hy3dworld OK ===')" \
-    && python -c "import utils3d; assert hasattr(utils3d.numpy, 'image_uv'), 'utils3d is the wrong build: MoGe needs utils3d.numpy.image_uv'; print('=== utils3d API OK ===')"
+    && python -c "import utils3d, utils3d.numpy as u3n, inspect; print('utils3d from:', inspect.getfile(utils3d)); print('uv-ish names:', [n for n in dir(u3n) if 'uv' in n.lower()][:10]); assert hasattr(u3n, 'image_uv'), 'utils3d is the wrong build: MoGe needs utils3d.numpy.image_uv'; print('=== utils3d API OK ===')"
 
 ENV PYTHONPATH=/app/hunyuanworld-src:${PYTHONPATH} \
     HYWORLD_REPO_DIR=/app/hunyuanworld-src \
