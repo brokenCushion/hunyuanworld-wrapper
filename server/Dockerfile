@@ -55,8 +55,13 @@ COPY requirements-panogen.txt /app/requirements-panogen.txt
 RUN pip install -r /app/requirements-panogen.txt
 
 # Stage 2 (scene generation) deps.
+# --ignore-installed: a dep here (open3d -> Flask) wants a newer blinker than
+# the apt/distutils blinker 1.4 in the base image, which pip can't uninstall.
+# --ignore-installed installs fresh copies without touching the apt one; torch
+# is reinstalled as a side effect but PIP_CONSTRAINT holds it at 2.5.0+cu124.
 COPY requirements-scenegen.txt /app/requirements-scenegen.txt
-RUN pip install -r /app/requirements-scenegen.txt
+RUN pip install --ignore-installed -r /app/requirements-scenegen.txt \
+    && python -c "import torch; print('=== TORCH', torch.__version__, 'CUDA', torch.version.cuda, '===')"
 
 # Real-ESRGAN super-resolution. realesrgan's PyPI deps pull plain `basicsr`,
 # which imports torchvision.transforms.functional_tensor (removed in tv 0.20);
