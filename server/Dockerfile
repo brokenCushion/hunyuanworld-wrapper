@@ -103,14 +103,21 @@ RUN grep -rl "torchvision.transforms.functional_tensor" /usr/local/lib/python3.1
 # transformers import (GroundingDINO). 0.30.2 matches Tencent's tested env and
 # works for every consumer here (transformers, diffusers, moge). Late pin so the
 # expensive earlier layers (pytorch3d compile, ZIM) stay cached.
-# utils3d: HunyuanWorld's pano_depth_utils.py calls utils3d.numpy.image_uv and
-# .intrinsics_to_fov. Upstream utils3d later renamed image_uv -> uv_map, so both
-# the PyPI build AND the newer commit MoGe pins fail at runtime with
-# "module 'utils3d.numpy' has no attribute 'image_uv'". Pin the older commit
-# that still provides both functions (the same one WorldGen pinned).
+# MoGe + utils3d must be pinned as a MATCHED PAIR. utils3d renamed its API over
+# time (numpy.image_uv -> np.uv_map), and the two consumers here sit on opposite
+# sides of that rename:
+#   * HunyuanWorld's pano_depth_utils.py calls utils3d.numpy.image_uv /
+#     .intrinsics_to_fov  (old API)
+#   * MoGe's panorama.py calls utils3d.np.uv_map on main (new API), but the
+#     0286b495 commit still uses the old utils3d.numpy names.
+# So: MoGe 0286b495 (old API, has model.v1) + utils3d c5daf6f6 (the commit that
+# MoGe pins, verified to provide all five functions both sides need).
+# --no-deps on MoGe so it can't drag in a newer utils3d and undo this.
 # Late step so the pytorch3d compile stays cached.
 RUN pip install --force-reinstall --no-deps \
-    "utils3d @ git+https://github.com/EasternJournalist/utils3d.git@3913c65d81e05e47b9f367250cf8c0f7462a0900"
+      "moge @ git+https://github.com/microsoft/MoGe.git@0286b495230a074aadf1c76cc5c679e943e5d1c6" \
+ && pip install --force-reinstall --no-deps \
+      "utils3d @ git+https://github.com/EasternJournalist/utils3d.git@c5daf6f6c244d251f252102d09e9b7bcef791a38"
 
 # easydict: an undeclared runtime dep of ZIM (its setup.py doesn't list it).
 RUN pip install "huggingface-hub==0.30.2" easydict==1.9
@@ -120,7 +127,8 @@ RUN pip install "huggingface-hub==0.30.2" easydict==1.9
 # rather than at first generation.
 RUN cd /app/hunyuanworld-src \
     && python -c "import hy3dworld; from hy3dworld import Text2PanoramaPipelines, LayerDecomposition, WorldComposer; print('=== hy3dworld OK ===')" \
-    && python -c "import utils3d.numpy as u3n; missing = [f for f in ('image_uv', 'intrinsics_to_fov') if not hasattr(u3n, f)]; assert not missing, f'utils3d build lacks {missing} (HunyuanWorld pano_depth_utils needs them)'; print('=== utils3d API OK ===')"
+    && python -c "import utils3d.numpy as u3n; missing = [f for f in ('image_uv', 'intrinsics_to_fov', 'icosahedron', 'intrinsics_from_fov', 'extrinsics_look_at') if not hasattr(u3n, f)]; assert not missing, f'utils3d build lacks {missing}'; print('=== utils3d API OK ===')" \
+    && python -c "from moge.model.v1 import MoGeModel; import moge.utils.panorama; print('=== MoGe OK ===')"
 
 ENV PYTHONPATH=/app/hunyuanworld-src:${PYTHONPATH} \
     HYWORLD_REPO_DIR=/app/hunyuanworld-src \
